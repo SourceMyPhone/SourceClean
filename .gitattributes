@@ -1,0 +1,6 @@
+# SourceClean repo attributes
+# The .bat is intentionally OEM 866 (CP866) encoded with CRLF - git must not
+# touch its content beyond line endings.
+*.bat text eol=crlf
+*.md text eol=lf
+LICENSE text eol=lf

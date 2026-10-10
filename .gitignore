@@ -1,0 +1,6 @@
+# Local artifacts (never commit these)
+*.log
+*.cfg
+*.flag
+SourceClean_quarantine/
+SourceClean_backup/
