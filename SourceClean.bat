@@ -1463,7 +1463,7 @@ goto menu
 :runblock
 set "SCLANG=%L%"
 set "SCPS=%TEMP%\SourceClean_%1.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$L=[IO.File]::ReadAllLines('%~f0',[Text.Encoding]::GetEncoding(866))|Where-Object{$_.StartsWith('::%1 ')}|ForEach-Object{$_.Substring(6)};[IO.File]::WriteAllText('%SCPS%',[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($L -join ''))))"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$L=[IO.File]::ReadAllLines('%~f0',[Text.Encoding]::GetEncoding(866))|Where-Object{$_.StartsWith('::%1 ')}|ForEach-Object{$_.Substring(6)};[IO.File]::WriteAllText('%SCPS%',[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($L -join ''))),(New-Object System.Text.UTF8Encoding($true))))"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCPS%"
 del "%SCPS%" >nul 2>&1
 exit /b
