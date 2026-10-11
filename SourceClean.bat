@@ -2,6 +2,13 @@
 setlocal EnableDelayedExpansion
 title SourceClean
 chcp 866 >nul
+if not exist "%SCDIR%" md "%SCDIR%" >nul 2>&1
+icacls "%SCDIR%" /inheritance:r /grant "*S-1-5-32-544:(OI)(CI)F" /grant "*S-1-5-18:(OI)(CI)F" >nul 2>&1
+if not exist "%QDIR%" md "%QDIR%" >nul 2>&1
+icacls "%QDIR%" /inheritance:r /grant "*S-1-5-32-544:(OI)(CI)F" /grant "*S-1-5-18:(OI)(CI)F" >nul 2>&1
+if exist "%LOCALAPPDATA%\SourceClean_settings.cfg" move /y "%LOCALAPPDATA%\SourceClean_settings.cfg" "%CFG%" >nul 2>&1
+if exist "%LOCALAPPDATA%\SourceClean_visual.cfg" move /y "%LOCALAPPDATA%\SourceClean_visual.cfg" "%VCFG%" >nul 2>&1
+if exist "%LOCALAPPDATA%\SourceClean_tasks.txt" move /y "%LOCALAPPDATA%\SourceClean_tasks.txt" "%TASKS%" >nul 2>&1
 
 :: ============================================================
 ::  SourceClean - cleanup and cooler toolkit
@@ -9,20 +16,24 @@ chcp 866 >nul
 :: ============================================================
 
 cd /d "%~dp0"
-set "CFG=%LOCALAPPDATA%\SourceClean_settings.cfg"
+set "SCDIR=%ProgramData%\SourceClean"
+set "CFG=%SCDIR%\SourceClean_settings.cfg"
+set "TASKS=%SCDIR%\SourceClean_tasks.txt"
 set "TASKS=%LOCALAPPDATA%\SourceClean_tasks.txt"
 set "FLAG=%LOCALAPPDATA%\SourceClean_calm.flag"
 set "LOG=%LOCALAPPDATA%\SourceClean.log"
 set "BAK=%LOCALAPPDATA%\SourceClean_backup"
-set "VCFG=%LOCALAPPDATA%\SourceClean_visual.cfg"
-set "QDIR=%LOCALAPPDATA%\SourceClean_quarantine"
+set "VCFG=%SCDIR%\SourceClean_visual.cfg"
+set "QDIR=%SCDIR%\Quarantine"
 
 fltmc >nul 2>&1
 if %errorlevel% neq 0 (
     echo.
     echo    Requesting administrator rights...
     echo    Запрашиваю права администратора...
-    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+set "SELF=%~f0"
+set "SARGS=%*"
+powershell -NoProfile -Command "$p=@{FilePath=$env:SELF;Verb='RunAs'};if($env:SARGS){$p.ArgumentList=$env:SARGS};Start-Process @p"
     exit /b
 )
 
@@ -153,6 +164,8 @@ set "S_B10=Startup manager (read-only)"
 set "S_B11=Battery report"
 set "S_B12=Font cache cleanup"
 set "S_A_DONE=Done."
+set "S_INVBAD=Invalid process name (letters, dots, dashes only)"
+set "S_ST_SEL=Numbers to quarantine (like 1,3; A=all; Enter=skip)"
 set "S_B13=Strange files scan"
 set "S_ST_TITLE=STRANGE FILES SCAN"
 set "S_ST_NOTE=Scanning Windows folders for unsigned executables (up to a minute)..."
@@ -310,6 +323,8 @@ if /i "%L%"=="R" (
     set "S_MA=Визуальные эффекты - прозрачность, анимации"
     set "S_MB=Системные инструменты - 12 утилит"
     set "S_A_DONE=Готово."
+    set "S_INVBAD=Некорректное имя процесса (только буквы, точки, дефисы)"
+    set "S_ST_SEL=Номера в карантин (например 1,3; A=все; Enter=пропустить)"
     set "S_B13=Поиск странных файлов"
     set "S_ST_TITLE=ПОИСК СТРАННЫХ ФАЙЛОВ"
     set "S_ST_NOTE=Ищу неподписанные .exe в системных папках (до минуты)..."
@@ -555,6 +570,7 @@ reg export "HKLM\SYSTEM\CurrentControlSet\Services\SysMain" "%BAK%\sysmain.reg" 
 reg export "HKLM\SYSTEM\CurrentControlSet\Services\WSearch" "%BAK%\wsearch.reg" /y >nul 2>&1
 
 for /f "delims=" %%t in ('powershell -NoProfile -Command "Get-ScheduledTask -EA SilentlyContinue | Where-Object { $_.TaskName -like 'NVIDIA App SelfUpdate*' -and $_.State -ne 'Disabled' } | ForEach-Object { $_.TaskPath + $_.TaskName }"') do echo %%t>>"%TASKS%"
+powershell -NoProfile -Command "$f='%TASKS%';if(Test-Path $f){$ok=Get-Content $f|Where-Object {$_ -match '^[A-Za-z0-9_{}\\ .-]+$'};Set-Content $f $ok -Encoding ASCII}"
 
 :calm_apply
 echo ON>"%FLAG%"
@@ -832,7 +848,14 @@ set "killname="
 set /p killname="   %S_KILL% > "
 if "%killname%"=="0" goto menu
 if "%killname%"=="" goto info_kill
-for /f "delims=" %%v in ('powershell -NoProfile -Command "$n=('%killname%' -replace '\.exe$','').ToLower();$sys=@('system','registry','smss','csrss','wininit','winlogon','services','lsass','svchost','msmpeng','nissrv','memory compression','memcompression','dwm','explorer','runtimebroker','fontdrvhost','audiodg','spoolsv','conhost','dllhost','taskhostw','sihost','textinputhost','startmenuexperiencehost','searchhost','shellexperiencehost','securityhealthservice','nvcontainer','applicationframehost','wudfhost','wmiprvse','searchindexer','smartscreen');$ok=$true;if($sys -contains $n){$ok=$false}else{$gp=Get-Process -Name $n -EA 0|Select-Object -First 1;if($gp.Path -and $gp.Path.StartsWith('C:\Windows\')){$ok=$false}};if($ok){'KILL_OK'}else{'PROTECTED'}"') do set "KCHK=%%v"
+set "KN=%killname%"
+for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:KN -match ''^[A-Za-z0-9._-]+$''){''OK''}else{''BAD''}"') do set "KVAL=%%v"
+if not "%KVAL%"=="OK" (
+    echo    %S_INVBAD%
+    call :log "kill refused: invalid name"
+    goto info_kill
+)
+for /f "delims=" %%v in ('powershell -NoProfile -Command "$n=$env:KN -replace ''\.exe$'','''';$sys=@(''system'',''registry'',''smss'',''csrss'',''wininit'',''winlogon'',''services'',''lsass'',''svchost'',''msmpeng'',''nissrv'',''memory compression'',''memcompression'',''dwm'',''explorer'',''runtimebroker'',''fontdrvhost'',''audiodg'',''spoolsv'',''conhost'',''dllhost'',''taskhostw'',''sihost'',''textinputhost'',''startmenuexperiencehost'',''searchhost'',''shellexperiencehost'',''securityhealthservice'',''nvcontainer'',''applicationframehost'',''wudfhost'',''wmiprvse'',''searchindexer'',''smartscreen'');$ok=$true;if($sys -contains $n){$ok=$false}else{$gp=Get-Process -Name $n -EA 0|Select-Object -First 1;if($gp.Path -and $gp.Path.StartsWith(''C:\Windows\'')){$ok=$false}};if($ok){''KILL_OK''}else{''PROTECTED''}"') do set "KCHK=%%v"
 if "%KCHK%"=="PROTECTED" (
     echo    %S_PROT%
     call :log "kill refused: %killname% is a system process"
@@ -988,7 +1011,7 @@ echo.
 echo   %S_LIN_OFF%
 echo.
 if exist "%VCFG%" (
-    for /f "usebackq tokens=1,* delims==" %%a in ("%VCFG%") do call :vr_apply %%a %%b
+    for /f "usebackq tokens=1,* delims==" %%a in ("%VCFG%") do call :vr_apply "%%a" "%%b"
     del "%VCFG%" >nul 2>&1
     echo    %S_VRS%
 ) else (
@@ -1152,7 +1175,7 @@ if not exist "%VCFG%" (
     pause
     goto visual
 )
-for /f "usebackq tokens=1,* delims==" %%a in ("%VCFG%") do call :vr_apply %%a %%b
+for /f "usebackq tokens=1,* delims==" %%a in ("%VCFG%") do call :vr_apply "%%a" "%%b"
 del "%VCFG%" >nul 2>&1
 call :log "visual: restored saved state"
 echo    %S_VRS%
@@ -1162,25 +1185,31 @@ pause
 goto visual
 
 :vr_apply
-if "%1"=="" exit /b
-if "%2"=="ABSENT" (
-    reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v %1 /f >nul 2>&1
-    reg delete "HKCU\Control Panel\Desktop\WindowMetrics" /v %1 /f >nul 2>&1
-    reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v %1 /f >nul 2>&1
-    reg delete "HKCU\Software\Microsoft\Windows\DWM" /v %1 /f >nul 2>&1
-    reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v %1 /f >nul 2>&1
-    reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" /v %1 /f >nul 2>&1
+set "VKEY=%~1"
+set "VVAL=%~2"
+if "%VKEY%"=="" exit /b
+echo %VKEY%|findstr /r /x "MinAnimate TaskbarAnimations EnableTransparency EnableAeroPeek ListviewAlphaSelect IconsOnly VisualFXSetting ToastEnabled" >nul 2>&1
+if errorlevel 1 exit /b
+if "%VVAL%"=="ABSENT" (
+    reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v %VKEY% /f >nul 2>&1
+    reg delete "HKCU\Control Panel\Desktop\WindowMetrics" /v %VKEY% /f >nul 2>&1
+    reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v %VKEY% /f >nul 2>&1
+    reg delete "HKCU\Software\Microsoft\Windows\DWM" /v %VKEY% /f >nul 2>&1
+    reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v %VKEY% /f >nul 2>&1
+    reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" /v %VKEY% /f >nul 2>&1
     exit /b
 )
-if "%1"=="MinAnimate" (
-    reg add "HKCU\Control Panel\Desktop\WindowMetrics" /v MinAnimate /t REG_SZ /d %2 /f >nul
+echo %VVAL%|findstr /r /x "[0-9][0-9]*" >nul 2>&1
+if errorlevel 1 exit /b
+if "%VKEY%"=="MinAnimate" (
+    reg add "HKCU\Control Panel\Desktop\WindowMetrics" /v MinAnimate /t REG_SZ /d %VVAL% /f >nul
     exit /b
 )
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v %1 /t REG_DWORD /d %2 /f >nul 2>&1
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v %1 /t REG_DWORD /d %2 /f >nul 2>&1
-reg add "HKCU\Software\Microsoft\Windows\DWM" /v %1 /t REG_DWORD /d %2 /f >nul 2>&1
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v %1 /t REG_DWORD /d %2 /f >nul 2>&1
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" /v %1 /t REG_DWORD /d %2 /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v %VKEY% /t REG_DWORD /d %VVAL% /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v %VKEY% /t REG_DWORD /d %VVAL% /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\DWM" /v %VKEY% /t REG_DWORD /d %VVAL% /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v %VKEY% /t REG_DWORD /d %VVAL% /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" /v %VKEY% /t REG_DWORD /d %VVAL% /f >nul 2>&1
 exit /b
 
 :svcsave
@@ -1221,96 +1250,6 @@ echo   %S_N5%
 echo.
 pause
 goto menu
-::ARM JGxhbmcgPSBpZiAoJGVudjpTQ0xBTkcgLWVxICdFJykgeyAnRScgfSBlbHNlIHsgJ1InIH0KZnVuY3Rpb24gVCgkZW4sICRydSkg
-::ARM eyBpZiAoJGxhbmcgLWVxICdFJykgeyAkZW4gfSBlbHNlIHsgJHJ1IH0gfQpmdW5jdGlvbiBQUGF0aCgkaWQpIHsgJHByID0gR2V0
-::ARM LVByb2Nlc3MgLUlkICRpZCAtRXJyb3JBY3Rpb24gMDsgaWYgKCRwciAtYW5kICRwci5QYXRoKSB7ICRwci5QYXRoIH0gZWxzZSB7
-::ARM IChUICcocGF0aCBoaWRkZW4pJyAnKNC/0YPRgtGMINGB0LrRgNGL0YIpJykgfSB9CmZ1bmN0aW9uIFBQYXRoTmFtZSgkbm0pIHsg
-::ARM JHByID0gR2V0LVByb2Nlc3MgLU5hbWUgJG5tIC1FcnJvckFjdGlvbiAwIHwgU2VsZWN0LU9iamVjdCAtRmlyc3QgMTsgaWYgKCRw
-::ARM ciAtYW5kICRwci5QYXRoKSB7ICRwci5QYXRoIH0gZWxzZSB7IChUICcocGF0aCBoaWRkZW4pJyAnKNC/0YPRgtGMINGB0LrRgNGL
-::ARM 0YIpJykgfSB9CldyaXRlLUhvc3QgJycKV3JpdGUtSG9zdCAoVCAnICBJZGxlIEdQVS9DUFUgbWluZXIgZGV0ZWN0b3InICcgINCU
-::ARM 0LXRgtC10LrRgtC+0YAg0LzQsNC50L3QtdGA0LAg0LIg0L/RgNC+0YHRgtC+0LUgKEdQVS9DUFUpJykKV3JpdGUtSG9zdCAoVCAn
-::ARM ICBEdXJhdGlvbjogWzFdIDUgbWluICAgWzJdIDEwIG1pbiAgIFszXSAxNSBtaW4gICAoRW50ZXIgPSAxMCknICcgINCU0LvQuNGC
-::ARM 0LXQu9GM0L3QvtGB0YLRjDogWzFdIDUg0LzQuNC9ICAgWzJdIDEwINC80LjQvSAgIFszXSAxNSDQvNC40L0gICAoRW50ZXIgPSAx
-::ARM MCknKQpXcml0ZS1Ib3N0IChUICcgIExlYXZlIHRoZSBQQyBhbG9uZSB3aGlsZSBpdCBydW5zLiBDdHJsK0Mgc3RvcHMgZWFybHkg
-::ARM KHJlc3VsdHMgbG9zdCkuJyAnICDQktC+INCy0YDQtdC80Y8g0L/RgNC+0LLQtdGA0LrQuCDQvdC1INGC0YDQvtCz0LDQudGC0LUg
-::ARM 0J/Qmi4gQ3RybCtDINC/0YDQtdGA0YvQstCw0LXRgiAo0YDQtdC30YPQu9GM0YLQsNGC0Ysg0L/QvtGC0LXRgNGP0Y7RgtGB0Y8p
-::ARM LicpCiRkID0gUmVhZC1Ib3N0IChUICcgIENob2ljZScgJyAg0JLRi9Cx0L7RgCcpCiRtaW4gPSAxMAppZiAoJGQgLWVxICcxJykg
-::ARM eyAkbWluID0gNSB9CmlmICgkZCAtZXEgJzMnKSB7ICRtaW4gPSAxNSB9CiRpbnRlcnZhbCA9IDUKJGNvcmVzID0gW0Vudmlyb25t
-::ARM ZW50XTo6UHJvY2Vzc29yQ291bnQKJGhhc0dwdSA9ICR0cnVlCiRudWwgPSAmIG52aWRpYS1zbWkgLS1xdWVyeS1ncHU9bmFtZSAt
-::ARM LWZvcm1hdD1jc3Ysbm9oZWFkZXIgMj4kbnVsbAppZiAoJExBU1RFWElUQ09ERSAtbmUgMCAtb3IgLW5vdCAkbnVsKSB7ICRoYXNH
-::ARM cHUgPSAkZmFsc2UgfQokcHJldiA9IEB7fQpmb3JlYWNoICgkcCBpbiAoR2V0LVByb2Nlc3MpKSB7IHRyeSB7ICRwcmV2WyRwLklk
-::ARM XSA9ICRwLkNQVSB9IGNhdGNoIHt9IH0KJGFnZyA9IEB7fQokYWdnUGF0aCA9IEB7fQokY3VkYVVzZXJzID0gQHt9CiRjdWRhUGF0
-::ARM aCA9IEB7fQokZ3B1TWF4ID0gMAokc2FtcGxlcyA9IDAKV3JpdGUtSG9zdCAnJwpXcml0ZS1Ib3N0ICgnICAnICsgKFQgJ01vbml0
-::ARM b3JpbmcnICfQodC70LXQttGDJykgKyAnICcgKyAkbWluICsgJyAnICsgKFQgJ21pbiwgc2FtcGxlIGV2ZXJ5JyAn0LzQuNC9LCDQ
-::ARM t9Cw0LzQtdGAINC60LDQttC00YvQtScpICsgJyAnICsgJGludGVydmFsICsgJyAnICsgKFQgJ3MsJyAn0YEsJykgKyAnICcgKyAk
-::ARM Y29yZXMgKyAnICcgKyAoVCAnQ1BVIGNvcmVzJyAn0Y/QtNC10YAgQ1BVJykgKyAkKGlmICgkaGFzR3B1KSB7ICcnIH0gZWxzZSB7
-::ARM ICcsICcgKyAoVCAnR1BVIGNoZWNrIHVuYXZhaWxhYmxlIChubyBudmlkaWEtc21pKScgJ0dQVSDQvdC10LTQvtGB0YLRg9C/0LXQ
-::ARM vSAo0L3QtdGCIG52aWRpYS1zbWkpJykgfSkpCldyaXRlLUhvc3QgJycKJGVuZCA9IChHZXQtRGF0ZSkuQWRkTWludXRlcygkbWlu
-::ARM KQp3aGlsZSAoKEdldC1EYXRlKSAtbHQgJGVuZCkgewogIFN0YXJ0LVNsZWVwIC1TZWNvbmRzICRpbnRlcnZhbAogICRzYW1wbGVz
-::ARM KysKICAkY3VyID0gQHt9CiAgZm9yZWFjaCAoJHAgaW4gKEdldC1Qcm9jZXNzKSkgeyB0cnkgeyAkY3VyWyRwLklkXSA9IEB7IG4g
-::ARM PSAkcC5OYW1lOyBjID0gJHAuQ1BVIH0gfSBjYXRjaCB7fSB9CiAgZm9yZWFjaCAoJGlkIGluICRjdXIuS2V5cykgewogICAgaWYg
-::ARM KCRwcmV2LkNvbnRhaW5zS2V5KCRpZCkgLWFuZCAkY3VyWyRpZF0uYyAtbmUgJG51bGwpIHsKICAgICAgJGRlbHRhID0gJGN1clsk
-::ARM aWRdLmMgLSAkcHJldlskaWRdCiAgICAgIGlmICgkZGVsdGEgLWd0IDAuMDUpIHsKICAgICAgICAkcGN0ID0gMTAwICogJGRlbHRh
-::ARM IC8gKCRpbnRlcnZhbCAqICRjb3JlcykKICAgICAgICAkbmFtZSA9ICRjdXJbJGlkXS5uCiAgICAgICAgaWYgKC1ub3QgJGFnZy5D
-::ARM b250YWluc0tleSgkbmFtZSkpIHsgJGFnZ1skbmFtZV0gPSBAeyBtYXggPSAwOyBzdW0gPSAwOyBob3QgPSAwIH0gfQogICAgICAg
-::ARM IGlmICgkcGN0IC1ndCAkYWdnWyRuYW1lXS5tYXgpIHsgJGFnZ1skbmFtZV0ubWF4ID0gW21hdGhdOjpSb3VuZCgkcGN0LCAxKSB9
-::ARM CiAgICAgICAgJGFnZ1skbmFtZV0uc3VtICs9ICRwY3QKICAgICAgICBpZiAoJHBjdCAtZ2UgMTUpIHsgJGFnZ1skbmFtZV0uaG90
-::ARM KysgfQogICAgICB9CiAgICB9CiAgfQogICRwcmV2ID0gQHt9CiAgZm9yZWFjaCAoJGlkIGluICRjdXIuS2V5cykgeyBpZiAoJGN1
-::ARM clskaWRdLmMgLW5lICRudWxsKSB7ICRwcmV2WyRpZF0gPSAkY3VyWyRpZF0uYyB9IH0KICAkZ3UgPSAwCiAgJGN1ZGEgPSBAKCkK
-::ARM ICBpZiAoJGhhc0dwdSkgewogICAgdHJ5IHsgJGd1ID0gW2ludF0oJiBudmlkaWEtc21pIC0tcXVlcnktZ3B1PXV0aWxpemF0aW9u
-::ARM LmdwdSAtLWZvcm1hdD1jc3Ysbm9oZWFkZXIsbm91bml0cyAyPiRudWxsIHwgU2VsZWN0LU9iamVjdCAtRmlyc3QgMSkgfSBjYXRj
-::ARM aCB7fQogICAgdHJ5IHsgJGN1ZGEgPSBAKCYgbnZpZGlhLXNtaSAtLXF1ZXJ5LWNvbXB1dGUtYXBwcz1waWQscHJvY2Vzc19uYW1l
-::ARM LHVzZWRfbWVtb3J5IC0tZm9ybWF0PWNzdixub2hlYWRlciAyPiRudWxsIHwgV2hlcmUtT2JqZWN0IHsgJF8gLW1hdGNoICdcUycg
-::ARM fSkgfSBjYXRjaCB7fQogIH0KICBpZiAoJGd1IC1ndCAkZ3B1TWF4KSB7ICRncHVNYXggPSAkZ3UgfQogIGZvcmVhY2ggKCRjIGlu
-::ARM ICRjdWRhKSB7CiAgICAkbSA9IFtyZWdleF06Ok1hdGNoKCRjLCAnXlxzKihcZCspLFxzKiguKz8pLFxzKihcZCspJykKICAgIGlm
-::ARM ICgkbS5TdWNjZXNzKSB7CiAgICAgICRwbiA9ICRtLkdyb3Vwc1syXS5WYWx1ZS5UcmltKCkKICAgICAgaWYgKC1ub3QgJGN1ZGFV
-::ARM c2Vycy5Db250YWluc0tleSgkcG4pKSB7ICRjdWRhVXNlcnNbJHBuXSA9IDAgfQogICAgICAkY3VkYVVzZXJzWyRwbl0rKwogICAg
-::ARM ICAkY3BhdGggPSBQUGF0aCAoW2ludF0kbS5Hcm91cHNbMV0uVmFsdWUpCiAgICAgIGlmICgtbm90ICRjdWRhUGF0aC5Db250YWlu
-::ARM c0tleSgkcG4pKSB7ICRjdWRhUGF0aFskcG5dID0gJGNwYXRoIH0KICAgIH0KICB9CiAgJGxlZnQgPSBbbWF0aF06OlJvdW5kKCgk
-::ARM ZW5kIC0gKEdldC1EYXRlKSkuVG90YWxNaW51dGVzKQogICR0b3AgPSAkYWdnLkdldEVudW1lcmF0b3IoKSB8IFNvcnQtT2JqZWN0
-::ARM IHsgJF8uVmFsdWUubWF4IH0gLURlc2NlbmRpbmcgfCBTZWxlY3QtT2JqZWN0IC1GaXJzdCAxCiAgJHRsID0gJycKICBpZiAoJHRv
-::ARM cCAtYW5kICR0b3AuVmFsdWUubWF4IC1ndCAwKSB7ICR0bCA9ICcgfCAnICsgKFQgJ3RvcCBDUFUnICfQvNCw0LrRgS4gQ1BVJykg
-::ARM KyAnOiAnICsgJHRvcC5OYW1lICsgJyAnICsgJHRvcC5WYWx1ZS5tYXggKyAnJScgfQogICRjbCA9ICcnCiAgaWYgKCRjdWRhLkNv
-::ARM dW50IC1ndCAwKSB7ICRjbCA9ICcgfCBDVURBOiAnICsgJGN1ZGEuQ291bnQgKyAnIScgfQogIFdyaXRlLUhvc3QgKCcgIFsgJyAr
-::ARM ICgnezAsMn0nIC1mICRsZWZ0KSArICcgJyArIChUICdtaW4gbGVmdCBdJyAn0LzQuNC9INC00L4g0LrQvtC90YbQsCBdJykgKyAn
-::ARM IEdQVSAnICsgKCd7MCwzfScgLWYgJGd1KSArICclJyArICRjbCArICR0bCkKfQpXcml0ZS1Ib3N0ICcnCldyaXRlLUhvc3QgKFQg
-::ARM KCctLS0gUmVzdWx0cyBhZnRlciAnICsgJG1pbiArICcgbWluIG9mIGlkbGUgLS0tJykgKCctLS0g0JjRgtC+0LPQuCDQv9C+0YHQ
-::ARM u9C1ICcgKyAkbWluICsgJyDQvNC40L0g0L/RgNC+0YHRgtC+0Y8gLS0tJykpCiRmbGFnID0gJGZhbHNlCmlmICgkaGFzR3B1KSB7
-::ARM CiAgV3JpdGUtSG9zdCAoJyAgJyArIChUICdHUFUgbWF4IHV0aWxpemF0aW9uIHdoaWxlIGlkbGU6JyAn0JzQsNC60YHQuNC80LDQ
-::ARM u9GM0L3QsNGPINC30LDQs9GA0YPQt9C60LAgR1BVINCyINC/0YDQvtGB0YLQvtC1OicpICsgJyAnICsgJGdwdU1heCArICclJykK
-::ARM ICBpZiAoJGN1ZGFVc2Vycy5Db3VudCAtZXEgMCkgewogICAgV3JpdGUtSG9zdCAoJyAgJyArIChUICdHUFUgY29tcHV0ZSBhcHBz
-::ARM OiBub25lIC0gbm8gcHJvY2VzcyB1c2VkIHRoZSBHUFUgY29tcHV0ZSBlbmdpbmUnICdHUFUt0LLRi9GH0LjRgdC70LXQvdC40Y86
-::ARM INC90Lgg0L7QtNC40L0g0L/RgNC+0YbQtdGB0YEg0L3QtSDRgtGA0L7Qs9Cw0Lsg0LLRi9GH0LjRgdC70LjRgtC10LvRjNC90L7Q
-::ARM tSDRj9C00YDQviBHUFUnKSkKICB9IGVsc2UgewogICAgJGZsYWcgPSAkdHJ1ZQogICAgV3JpdGUtSG9zdCAoJyAgJyArIChUICdH
-::ARM UFUgQ09NUFVURSBVU0VEIFdISUxFIElETEUgKGNsYXNzaWMgbWluZXIgc2lnbik6JyAnR1BVLdCS0KvQp9CY0KHQm9CV0J3QmNCv
-::ARM INCSINCf0KDQntCh0KLQntCVICjQutC70LDRgdGB0LjRh9C10YHQutC40Lkg0L/RgNC40LfQvdCw0Log0LzQsNC50L3QtdGA0LAp
-::ARM OicpKQogICAgZm9yZWFjaCAoJGN1IGluICRjdWRhVXNlcnMuR2V0RW51bWVyYXRvcigpKSB7CiAgICAgIFdyaXRlLUhvc3QgKCcg
-::ARM ICAgJyArICRjdS5LZXkgKyAnICAoJyArIChUICdzZWVuIGluJyAn0LfQsNC80LXRh9C10L0g0LInKSArICcgJyArICRjdS5WYWx1
-::ARM ZSArICcgLyAnICsgJHNhbXBsZXMgKyAnICcgKyAoVCAnc2FtcGxlcycgJ9C30LDQvNC10YDQsNGFJykgKyAnKScpCiAgICAgIFdy
-::ARM aXRlLUhvc3QgKCcgICAgICAnICsgKFQgJ2ZpbGU6JyAn0YTQsNC50Ls6JykgKyAnICcgKyAkY3VkYVBhdGhbJGN1LktleV0pCiAg
-::ARM ICB9CiAgfQp9CldyaXRlLUhvc3QgJycKV3JpdGUtSG9zdCAoJyAgJyArIChUICdUb3AgQ1BVIGNvbnN1bWVycyBkdXJpbmcgaWRs
-::ARM ZTonICfQmtGC0L4g0LPRgNGD0LfQuNC7IENQVSDQsiDQv9GA0L7RgdGC0L7QtTonKSkKZm9yZWFjaCAoJGUgaW4gKCRhZ2cuR2V0
-::ARM RW51bWVyYXRvcigpIHwgU29ydC1PYmplY3QgeyAkXy5WYWx1ZS5tYXggfSAtRGVzY2VuZGluZyB8IFNlbGVjdC1PYmplY3QgLUZp
-::ARM cnN0IDUpKSB7CiAgJGF2ZyA9IFttYXRoXTo6Um91bmQoJGUuVmFsdWUuc3VtIC8gW21hdGhdOjpNYXgoMSwgJHNhbXBsZXMpLCAx
-::ARM KQogIFdyaXRlLUhvc3QgKCcgICAgJyArICgnezAsLTMwfScgLWYgJGUuS2V5KSArICcgbWF4ICcgKyAoJ3swLDV9JyAtZiAkZS5W
-::ARM YWx1ZS5tYXgpICsgJyUgICBhdmcgJyArICgnezAsNX0nIC1mICRhdmcpICsgJyUnKQp9CiRzdXMgPSBAKCRhZ2cuR2V0RW51bWVy
-::ARM YXRvcigpIHwgV2hlcmUtT2JqZWN0IHsgJF8uVmFsdWUuaG90IC1nZSAoJHNhbXBsZXMgKiAwLjMpIC1hbmQgJF8uVmFsdWUubWF4
-::ARM IC1nZSAyMCB9IHwgU29ydC1PYmplY3QgeyAkXy5WYWx1ZS5tYXggfSAtRGVzY2VuZGluZykKV3JpdGUtSG9zdCAnJwppZiAoJHN1
-::ARM cy5Db3VudCAtZ3QgMCkgewogICRmbGFnID0gJHRydWUKICBXcml0ZS1Ib3N0ICgnICAnICsgKFQgJ1NVU1RBSU5FRCBCQUNLR1JP
-::ARM VU5EIExPQUQgKHBvc3NpYmxlIENQVSBtaW5lcik6JyAn0J/QntCh0KLQntCv0J3QndCQ0K8g0KTQntCd0J7QktCQ0K8g0J3QkNCT
-::ARM 0KDQo9CX0JrQkCAo0LLQvtC30LzQvtC20LXQvSBDUFUt0LzQsNC50L3QtdGAKTonKSkKICBmb3JlYWNoICgkcyBpbiAkc3VzKSB7
-::ARM CiAgICBXcml0ZS1Ib3N0ICgnICAgICcgKyAkcy5LZXkgKyAnIC0gbWF4ICcgKyAkcy5WYWx1ZS5tYXggKyAnJScpCiAgICBXcml0
-::ARM ZS1Ib3N0ICgnICAgICAgJyArIChUICdmaWxlOicgJ9GE0LDQudC7OicpICsgJyAnICsgKFBQYXRoTmFtZSAkcy5LZXkpKQogIH0K
-::ARM fSBlbHNlIHsKICBXcml0ZS1Ib3N0ICgnICAnICsgKFQgJ1N1c3RhaW5lZCBiYWNrZ3JvdW5kIGxvYWQ6IG5vbmUgLSBjbGVhbicg
-::ARM J9Cf0L7RgdGC0L7Rj9C90L3QsNGPINGE0L7QvdC+0LLQsNGPINC90LDQs9GA0YPQt9C60LA6INC90LUg0L3QsNC50LTQtdC90LAg
-::ARM LSDRh9C40YHRgtC+JykpCn0KV3JpdGUtSG9zdCAnJwppZiAoJGZsYWcpIHsKICBXcml0ZS1Ib3N0ICgnICAnICsgKFQgJ1ZFUkRJ
-::ARM Q1Q6IFNVU1BJQ0lPVVMgLSByZXZpZXcgdGhlIGZpbGUgcGF0aHMgYWJvdmUnICfQktCV0KDQlNCY0JrQojog0J/QntCU0J7Ql9Cg
-::ARM 0JjQotCV0JvQrNCd0J4gLSDRgNCw0LfQsdC10YDQuNGC0LUg0L/Rg9GC0Lgg0Log0YTQsNC50LvQsNC8INCy0YvRiNC1JykpCn0g
-::ARM ZWxzZWlmICgtbm90ICRoYXNHcHUpIHsKICBXcml0ZS1Ib3N0ICgnICAnICsgKFQgJ1ZFUkRJQ1Q6IENQVSBsb29rcyBjbGVhbiAo
-::ARM R1BVIHdhcyBub3QgY2hlY2tlZCknICfQktCV0KDQlNCY0JrQojog0L/QviBDUFUg0YfQuNGB0YLQviAoR1BVINC90LUg0L/RgNC+
-::ARM 0LLQtdGA0Y/Qu9GB0Y8pJykpCn0gZWxzZSB7CiAgV3JpdGUtSG9zdCAoJyAgJyArIChUICdWRVJESUNUOiBDTEVBTiAtIHRoZSBp
-::ARM ZGxlIHN5c3RlbSBiZWhhdmVzIG5vcm1hbGx5JyAn0JLQldCg0JTQmNCa0KI6INCn0JjQodCi0J4gLSDRgdC40YHRgtC10LzQsCDQ
-::ARM siDQv9GA0L7RgdGC0L7QtSDQstC10LTRkdGCINGB0LXQsdGPINC90L7RgNC80LDQu9GM0L3QvicpKQp9Cg==
 ::ARB JGxhbmcgPSBpZiAoJGVudjpTQ0xBTkcgLWVxICdFJykgeyAnRScgfSBlbHNlIHsgJ1InIH0KZnVuY3Rpb24gVCgkZW4sICRydSkg
 ::ARB eyBpZiAoJGxhbmcgLWVxICdFJykgeyAkZW4gfSBlbHNlIHsgJHJ1IH0gfQokY3MgPSBAJwp1c2luZyBTeXN0ZW07CnVzaW5nIFN5
 ::ARB c3RlbS5SdW50aW1lLkludGVyb3BTZXJ2aWNlczsKdXNpbmcgU3lzdGVtLlRleHQ7CnVzaW5nIFN5c3RlbS5UaHJlYWRpbmc7CnVz
@@ -1460,10 +1399,102 @@ goto menu
 ::ARB ICgnICAnICsgKFQgJ1JldmlldyBlYWNoIG9uZTogdGhlIGJhdCB3aWxsIG9mZmVyIHF1YXJhbnRpbmUgYWZ0ZXIgdGhpcycgJ9Cg
 ::ARB 0LDQt9Cx0LXRgNC40YLQtSDQuNGFOiDQsdCw0YLQvdC40Log0L/RgNC10LTQu9C+0LbQuNGCINC60LDRgNCw0L3RgtC40L0g0L/Q
 ::ARB vtGB0LvQtSDQv9GA0L7QstC10YDQutC4JykpCn0K
+::ARM JGxhbmcgPSBpZiAoJGVudjpTQ0xBTkcgLWVxICdFJykgeyAnRScgfSBlbHNlIHsgJ1InIH0KZnVuY3Rpb24gVCgkZW4sICRydSkg
+::ARM eyBpZiAoJGxhbmcgLWVxICdFJykgeyAkZW4gfSBlbHNlIHsgJHJ1IH0gfQpmdW5jdGlvbiBQUGF0aCgkaWQpIHsgJHByID0gR2V0
+::ARM LVByb2Nlc3MgLUlkICRpZCAtRXJyb3JBY3Rpb24gMDsgaWYgKCRwciAtYW5kICRwci5QYXRoKSB7ICRwci5QYXRoIH0gZWxzZSB7
+::ARM IChUICcocGF0aCBoaWRkZW4pJyAnKNC/0YPRgtGMINGB0LrRgNGL0YIpJykgfSB9CmZ1bmN0aW9uIFBQYXRoTmFtZSgkbm0pIHsg
+::ARM JHByID0gR2V0LVByb2Nlc3MgLU5hbWUgJG5tIC1FcnJvckFjdGlvbiAwIHwgU2VsZWN0LU9iamVjdCAtRmlyc3QgMTsgaWYgKCRw
+::ARM ciAtYW5kICRwci5QYXRoKSB7ICRwci5QYXRoIH0gZWxzZSB7IChUICcocGF0aCBoaWRkZW4pJyAnKNC/0YPRgtGMINGB0LrRgNGL
+::ARM 0YIpJykgfSB9CldyaXRlLUhvc3QgJycKV3JpdGUtSG9zdCAoVCAnICBJZGxlIEdQVS9DUFUgbWluZXIgZGV0ZWN0b3InICcgINCU
+::ARM 0LXRgtC10LrRgtC+0YAg0LzQsNC50L3QtdGA0LAg0LIg0L/RgNC+0YHRgtC+0LUgKEdQVS9DUFUpJykKV3JpdGUtSG9zdCAoVCAn
+::ARM ICBEdXJhdGlvbjogWzFdIDUgbWluICAgWzJdIDEwIG1pbiAgIFszXSAxNSBtaW4gICAoRW50ZXIgPSAxMCknICcgINCU0LvQuNGC
+::ARM 0LXQu9GM0L3QvtGB0YLRjDogWzFdIDUg0LzQuNC9ICAgWzJdIDEwINC80LjQvSAgIFszXSAxNSDQvNC40L0gICAoRW50ZXIgPSAx
+::ARM MCknKQpXcml0ZS1Ib3N0IChUICcgIExlYXZlIHRoZSBQQyBhbG9uZSB3aGlsZSBpdCBydW5zLiBDdHJsK0Mgc3RvcHMgZWFybHkg
+::ARM KHJlc3VsdHMgbG9zdCkuJyAnICDQktC+INCy0YDQtdC80Y8g0L/RgNC+0LLQtdGA0LrQuCDQvdC1INGC0YDQvtCz0LDQudGC0LUg
+::ARM 0J/Qmi4gQ3RybCtDINC/0YDQtdGA0YvQstCw0LXRgiAo0YDQtdC30YPQu9GM0YLQsNGC0Ysg0L/QvtGC0LXRgNGP0Y7RgtGB0Y8p
+::ARM LicpCiRkID0gUmVhZC1Ib3N0IChUICcgIENob2ljZScgJyAg0JLRi9Cx0L7RgCcpCiRtaW4gPSAxMAppZiAoJGQgLWVxICcxJykg
+::ARM eyAkbWluID0gNSB9CmlmICgkZCAtZXEgJzMnKSB7ICRtaW4gPSAxNSB9CiRpbnRlcnZhbCA9IDUKJGNvcmVzID0gW0Vudmlyb25t
+::ARM ZW50XTo6UHJvY2Vzc29yQ291bnQKJGhhc0dwdSA9ICR0cnVlCiRudWwgPSAmIG52aWRpYS1zbWkgLS1xdWVyeS1ncHU9bmFtZSAt
+::ARM LWZvcm1hdD1jc3Ysbm9oZWFkZXIgMj4kbnVsbAppZiAoJExBU1RFWElUQ09ERSAtbmUgMCAtb3IgLW5vdCAkbnVsKSB7ICRoYXNH
+::ARM cHUgPSAkZmFsc2UgfQokcHJldiA9IEB7fQpmb3JlYWNoICgkcCBpbiAoR2V0LVByb2Nlc3MpKSB7IHRyeSB7ICRwcmV2WyRwLklk
+::ARM XSA9ICRwLkNQVSB9IGNhdGNoIHt9IH0KJGFnZyA9IEB7fQokY3VkYVVzZXJzID0gQHt9CiRjdWRhUGF0aCA9IEB7fQokZ3B1TWF4
+::ARM ID0gMAokc2FtcGxlcyA9IDAKV3JpdGUtSG9zdCAnJwpXcml0ZS1Ib3N0ICgnICAnICsgKFQgJ01vbml0b3JpbmcnICfQodC70LXQ
+::ARM ttGDJykgKyAnICcgKyAkbWluICsgJyAnICsgKFQgJ21pbiwgc2FtcGxlIGV2ZXJ5JyAn0LzQuNC9LCDQt9Cw0LzQtdGAINC60LDQ
+::ARM ttC00YvQtScpICsgJyAnICsgJGludGVydmFsICsgJyAnICsgKFQgJ3MsJyAn0YEsJykgKyAnICcgKyAkY29yZXMgKyAnICcgKyAo
+::ARM VCAnQ1BVIGNvcmVzJyAn0Y/QtNC10YAgQ1BVJykgKyAkKGlmICgkaGFzR3B1KSB7ICcnIH0gZWxzZSB7ICcsICcgKyAoVCAnR1BV
+::ARM IGNoZWNrIHVuYXZhaWxhYmxlIChubyBudmlkaWEtc21pKScgJ0dQVSDQvdC10LTQvtGB0YLRg9C/0LXQvSAo0L3QtdGCIG52aWRp
+::ARM YS1zbWkpJykgfSkpCldyaXRlLUhvc3QgJycKJGVuZCA9IChHZXQtRGF0ZSkuQWRkTWludXRlcygkbWluKQp3aGlsZSAoKEdldC1E
+::ARM YXRlKSAtbHQgJGVuZCkgewogIFN0YXJ0LVNsZWVwIC1TZWNvbmRzICRpbnRlcnZhbAogICRzYW1wbGVzKysKICAkY3VyID0gQHt9
+::ARM CiAgZm9yZWFjaCAoJHAgaW4gKEdldC1Qcm9jZXNzKSkgeyB0cnkgeyAkY3VyWyRwLklkXSA9IEB7IG4gPSAkcC5OYW1lOyBjID0g
+::ARM JHAuQ1BVIH0gfSBjYXRjaCB7fSB9CiAgZm9yZWFjaCAoJGlkIGluICRjdXIuS2V5cykgewogICAgaWYgKCRwcmV2LkNvbnRhaW5z
+::ARM S2V5KCRpZCkgLWFuZCAkY3VyWyRpZF0uYyAtbmUgJG51bGwpIHsKICAgICAgJGRlbHRhID0gJGN1clskaWRdLmMgLSAkcHJldlsk
+::ARM aWRdCiAgICAgIGlmICgkZGVsdGEgLWd0IDAuMDUpIHsKICAgICAgICAkcGN0ID0gMTAwICogJGRlbHRhIC8gKCRpbnRlcnZhbCAq
+::ARM ICRjb3JlcykKICAgICAgICAkbmFtZSA9ICRjdXJbJGlkXS5uCiAgICAgICAgaWYgKC1ub3QgJGFnZy5Db250YWluc0tleSgkbmFt
+::ARM ZSkpIHsgJGFnZ1skbmFtZV0gPSBAeyBtYXggPSAwOyBzdW0gPSAwOyBob3QgPSAwIH0gfQogICAgICAgIGlmICgkcGN0IC1ndCAk
+::ARM YWdnWyRuYW1lXS5tYXgpIHsgJGFnZ1skbmFtZV0ubWF4ID0gW21hdGhdOjpSb3VuZCgkcGN0LCAxKSB9CiAgICAgICAgJGFnZ1sk
+::ARM bmFtZV0uc3VtICs9ICRwY3QKICAgICAgICBpZiAoJHBjdCAtZ2UgMTUpIHsgJGFnZ1skbmFtZV0uaG90KysgfQogICAgICB9CiAg
+::ARM ICB9CiAgfQogICRwcmV2ID0gQHt9CiAgZm9yZWFjaCAoJGlkIGluICRjdXIuS2V5cykgeyBpZiAoJGN1clskaWRdLmMgLW5lICRu
+::ARM dWxsKSB7ICRwcmV2WyRpZF0gPSAkY3VyWyRpZF0uYyB9IH0KICAkZ3UgPSAwCiAgJGN1ZGEgPSBAKCkKICBpZiAoJGhhc0dwdSkg
+::ARM ewogICAgdHJ5IHsgJGd1ID0gW2ludF0oJiBudmlkaWEtc21pIC0tcXVlcnktZ3B1PXV0aWxpemF0aW9uLmdwdSAtLWZvcm1hdD1j
+::ARM c3Ysbm9oZWFkZXIsbm91bml0cyAyPiRudWxsIHwgU2VsZWN0LU9iamVjdCAtRmlyc3QgMSkgfSBjYXRjaCB7fQogICAgdHJ5IHsg
+::ARM JGN1ZGEgPSBAKCYgbnZpZGlhLXNtaSAtLXF1ZXJ5LWNvbXB1dGUtYXBwcz1waWQscHJvY2Vzc19uYW1lLHVzZWRfbWVtb3J5IC0t
+::ARM Zm9ybWF0PWNzdixub2hlYWRlciAyPiRudWxsIHwgV2hlcmUtT2JqZWN0IHsgJF8gLW1hdGNoICdcUycgfSkgfSBjYXRjaCB7fQog
+::ARM IH0KICBpZiAoJGd1IC1ndCAkZ3B1TWF4KSB7ICRncHVNYXggPSAkZ3UgfQogIGZvcmVhY2ggKCRjIGluICRjdWRhKSB7CiAgICAk
+::ARM bSA9IFtyZWdleF06Ok1hdGNoKCRjLCAnXlxzKihcZCspLFxzKiguKz8pLFxzKihcZCspJykKICAgIGlmICgkbS5TdWNjZXNzKSB7
+::ARM CiAgICAgICRwbiA9ICRtLkdyb3Vwc1syXS5WYWx1ZS5UcmltKCkKICAgICAgaWYgKC1ub3QgJGN1ZGFVc2Vycy5Db250YWluc0tl
+::ARM eSgkcG4pKSB7ICRjdWRhVXNlcnNbJHBuXSA9IDAgfQogICAgICAkY3VkYVVzZXJzWyRwbl0rKwogICAgICAkY3BhdGggPSBQUGF0
+::ARM aCAoW2ludF0kbS5Hcm91cHNbMV0uVmFsdWUpCiAgICAgIGlmICgtbm90ICRjdWRhUGF0aC5Db250YWluc0tleSgkcG4pKSB7ICRj
+::ARM dWRhUGF0aFskcG5dID0gJGNwYXRoIH0KICAgIH0KICB9CiAgJGxlZnQgPSBbbWF0aF06OlJvdW5kKCgkZW5kIC0gKEdldC1EYXRl
+::ARM KSkuVG90YWxNaW51dGVzKQogICR0b3AgPSAkYWdnLkdldEVudW1lcmF0b3IoKSB8IFNvcnQtT2JqZWN0IHsgJF8uVmFsdWUubWF4
+::ARM IH0gLURlc2NlbmRpbmcgfCBTZWxlY3QtT2JqZWN0IC1GaXJzdCAxCiAgJHRsID0gJycKICBpZiAoJHRvcCAtYW5kICR0b3AuVmFs
+::ARM dWUubWF4IC1ndCAwKSB7ICR0bCA9ICcgfCAnICsgKFQgJ3RvcCBDUFUnICfQvNCw0LrRgS4gQ1BVJykgKyAnOiAnICsgJHRvcC5O
+::ARM YW1lICsgJyAnICsgJHRvcC5WYWx1ZS5tYXggKyAnJScgfQogICRjbCA9ICcnCiAgaWYgKCRjdWRhLkNvdW50IC1ndCAwKSB7ICRj
+::ARM bCA9ICcgfCBDVURBOiAnICsgJGN1ZGEuQ291bnQgKyAnIScgfQogIFdyaXRlLUhvc3QgKCcgIFsgJyArICgnezAsMn0nIC1mICRs
+::ARM ZWZ0KSArICcgJyArIChUICdtaW4gbGVmdCBdJyAn0LzQuNC9INC00L4g0LrQvtC90YbQsCBdJykgKyAnIEdQVSAnICsgKCd7MCwz
+::ARM fScgLWYgJGd1KSArICclJyArICRjbCArICR0bCkKfQpXcml0ZS1Ib3N0ICcnCldyaXRlLUhvc3QgKFQgKCctLS0gUmVzdWx0cyBh
+::ARM ZnRlciAnICsgJG1pbiArICcgbWluIG9mIGlkbGUgLS0tJykgKCctLS0g0JjRgtC+0LPQuCDQv9C+0YHQu9C1ICcgKyAkbWluICsg
+::ARM JyDQvNC40L0g0L/RgNC+0YHRgtC+0Y8gLS0tJykpCiRmbGFnID0gJGZhbHNlCmlmICgkaGFzR3B1KSB7CiAgV3JpdGUtSG9zdCAo
+::ARM JyAgJyArIChUICdHUFUgbWF4IHV0aWxpemF0aW9uIHdoaWxlIGlkbGU6JyAn0JzQsNC60YHQuNC80LDQu9GM0L3QsNGPINC30LDQ
+::ARM s9GA0YPQt9C60LAgR1BVINCyINC/0YDQvtGB0YLQvtC1OicpICsgJyAnICsgJGdwdU1heCArICclJykKICBpZiAoJGN1ZGFVc2Vy
+::ARM cy5Db3VudCAtZXEgMCkgewogICAgV3JpdGUtSG9zdCAoJyAgJyArIChUICdHUFUgY29tcHV0ZSBhcHBzOiBub25lIC0gbm8gcHJv
+::ARM Y2VzcyB1c2VkIHRoZSBHUFUgY29tcHV0ZSBlbmdpbmUnICdHUFUt0LLRi9GH0LjRgdC70LXQvdC40Y86INC90Lgg0L7QtNC40L0g
+::ARM 0L/RgNC+0YbQtdGB0YEg0L3QtSDRgtGA0L7Qs9Cw0Lsg0LLRi9GH0LjRgdC70LjRgtC10LvRjNC90L7QtSDRj9C00YDQviBHUFUn
+::ARM KSkKICB9IGVsc2UgewogICAgJGZsYWcgPSAkdHJ1ZQogICAgV3JpdGUtSG9zdCAoJyAgJyArIChUICdHUFUgQ09NUFVURSBVU0VE
+::ARM IFdISUxFIElETEUgKGNsYXNzaWMgbWluZXIgc2lnbik6JyAnR1BVLdCS0KvQp9CY0KHQm9CV0J3QmNCvINCSINCf0KDQntCh0KLQ
+::ARM ntCVICjQutC70LDRgdGB0LjRh9C10YHQutC40Lkg0L/RgNC40LfQvdCw0Log0LzQsNC50L3QtdGA0LApOicpKQogICAgZm9yZWFj
+::ARM aCAoJGN1IGluICRjdWRhVXNlcnMuR2V0RW51bWVyYXRvcigpKSB7CiAgICAgIFdyaXRlLUhvc3QgKCcgICAgJyArICRjdS5LZXkg
+::ARM KyAnICAoJyArIChUICdzZWVuIGluJyAn0LfQsNC80LXRh9C10L0g0LInKSArICcgJyArICRjdS5WYWx1ZSArICcgLyAnICsgJHNh
+::ARM bXBsZXMgKyAnICcgKyAoVCAnc2FtcGxlcycgJ9C30LDQvNC10YDQsNGFJykgKyAnKScpCiAgICAgIFdyaXRlLUhvc3QgKCcgICAg
+::ARM ICAnICsgKFQgJ2ZpbGU6JyAn0YTQsNC50Ls6JykgKyAnICcgKyAkY3VkYVBhdGhbJGN1LktleV0pCiAgICB9CiAgfQp9CldyaXRl
+::ARM LUhvc3QgJycKV3JpdGUtSG9zdCAoJyAgJyArIChUICdUb3AgQ1BVIGNvbnN1bWVycyBkdXJpbmcgaWRsZTonICfQmtGC0L4g0LPR
+::ARM gNGD0LfQuNC7IENQVSDQsiDQv9GA0L7RgdGC0L7QtTonKSkKZm9yZWFjaCAoJGUgaW4gKCRhZ2cuR2V0RW51bWVyYXRvcigpIHwg
+::ARM U29ydC1PYmplY3QgeyAkXy5WYWx1ZS5tYXggfSAtRGVzY2VuZGluZyB8IFNlbGVjdC1PYmplY3QgLUZpcnN0IDUpKSB7CiAgJGF2
+::ARM ZyA9IFttYXRoXTo6Um91bmQoJGUuVmFsdWUuc3VtIC8gW21hdGhdOjpNYXgoMSwgJHNhbXBsZXMpLCAxKQogIFdyaXRlLUhvc3Qg
+::ARM KCcgICAgJyArICgnezAsLTMwfScgLWYgJGUuS2V5KSArICcgbWF4ICcgKyAoJ3swLDV9JyAtZiAkZS5WYWx1ZS5tYXgpICsgJyUg
+::ARM ICBhdmcgJyArICgnezAsNX0nIC1mICRhdmcpICsgJyUnKQp9CiRzdXMgPSBAKCRhZ2cuR2V0RW51bWVyYXRvcigpIHwgV2hlcmUt
+::ARM T2JqZWN0IHsgJF8uVmFsdWUuaG90IC1nZSAoJHNhbXBsZXMgKiAwLjMpIC1hbmQgJF8uVmFsdWUubWF4IC1nZSAyMCB9IHwgU29y
+::ARM dC1PYmplY3QgeyAkXy5WYWx1ZS5tYXggfSAtRGVzY2VuZGluZykKV3JpdGUtSG9zdCAnJwppZiAoJHN1cy5Db3VudCAtZ3QgMCkg
+::ARM ewogICRmbGFnID0gJHRydWUKICBXcml0ZS1Ib3N0ICgnICAnICsgKFQgJ1NVU1RBSU5FRCBCQUNLR1JPVU5EIExPQUQgKHBvc3Np
+::ARM YmxlIENQVSBtaW5lcik6JyAn0J/QntCh0KLQntCv0J3QndCQ0K8g0KTQntCd0J7QktCQ0K8g0J3QkNCT0KDQo9CX0JrQkCAo0LLQ
+::ARM vtC30LzQvtC20LXQvSBDUFUt0LzQsNC50L3QtdGAKTonKSkKICBmb3JlYWNoICgkcyBpbiAkc3VzKSB7CiAgICBXcml0ZS1Ib3N0
+::ARM ICgnICAgICcgKyAkcy5LZXkgKyAnIC0gbWF4ICcgKyAkcy5WYWx1ZS5tYXggKyAnJScpCiAgICBXcml0ZS1Ib3N0ICgnICAgICAg
+::ARM JyArIChUICdmaWxlOicgJ9GE0LDQudC7OicpICsgJyAnICsgKFBQYXRoTmFtZSAkcy5LZXkpKQogIH0KfSBlbHNlIHsKICBXcml0
+::ARM ZS1Ib3N0ICgnICAnICsgKFQgJ1N1c3RhaW5lZCBiYWNrZ3JvdW5kIGxvYWQ6IG5vbmUgLSBjbGVhbicgJ9Cf0L7RgdGC0L7Rj9C9
+::ARM 0L3QsNGPINGE0L7QvdC+0LLQsNGPINC90LDQs9GA0YPQt9C60LA6INC90LUg0L3QsNC50LTQtdC90LAgLSDRh9C40YHRgtC+Jykp
+::ARM Cn0KV3JpdGUtSG9zdCAnJwppZiAoJGZsYWcpIHsKICBXcml0ZS1Ib3N0ICgnICAnICsgKFQgJ1ZFUkRJQ1Q6IFNVU1BJQ0lPVVMg
+::ARM LSByZXZpZXcgdGhlIGZpbGUgcGF0aHMgYWJvdmUnICfQktCV0KDQlNCY0JrQojog0J/QntCU0J7Ql9Cg0JjQotCV0JvQrNCd0J4g
+::ARM LSDRgNCw0LfQsdC10YDQuNGC0LUg0L/Rg9GC0Lgg0Log0YTQsNC50LvQsNC8INCy0YvRiNC1JykpCn0gZWxzZWlmICgtbm90ICRo
+::ARM YXNHcHUpIHsKICBXcml0ZS1Ib3N0ICgnICAnICsgKFQgJ1ZFUkRJQ1Q6IENQVSBsb29rcyBjbGVhbiAoR1BVIHdhcyBub3QgY2hl
+::ARM Y2tlZCknICfQktCV0KDQlNCY0JrQojog0L/QviBDUFUg0YfQuNGB0YLQviAoR1BVINC90LUg0L/RgNC+0LLQtdGA0Y/Qu9GB0Y8p
+::ARM JykpCn0gZWxzZSB7CiAgV3JpdGUtSG9zdCAoJyAgJyArIChUICdWRVJESUNUOiBDTEVBTiAtIHRoZSBpZGxlIHN5c3RlbSBiZWhh
+::ARM dmVzIG5vcm1hbGx5JyAn0JLQldCg0JTQmNCa0KI6INCn0JjQodCi0J4gLSDRgdC40YHRgtC10LzQsCDQsiDQv9GA0L7RgdGC0L7Q
+::ARM tSDQstC10LTRkdGCINGB0LXQsdGPINC90L7RgNC80LDQu9GM0L3QvicpKQp9Cg==
 :runblock
 set "SCLANG=%L%"
-set "SCPS=%TEMP%\SourceClean_%1.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$L=[IO.File]::ReadAllLines('%~f0',[Text.Encoding]::GetEncoding(866))|Where-Object{$_.StartsWith('::%1 ')}|ForEach-Object{$_.Substring(6)};[IO.File]::WriteAllText('%SCPS%',[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($L -join ''))),(New-Object System.Text.UTF8Encoding($true))))"
+if not exist "%SCDIR%" md "%SCDIR%" >nul 2>&1
+icacls "%SCDIR%" /inheritance:r /grant "*S-1-5-32-544:F" /grant "*S-1-5-18:F" >nul 2>&1
+set "SCPS=%SCDIR%\SourceClean_%1_%RANDOM%.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$L=[IO.File]::ReadAllLines('%~f0',[Text.Encoding]::GetEncoding(866))|Where-Object{$_.StartsWith('::%1 ')}|ForEach-Object{$_.Substring(6)};[IO.File]::WriteAllText('%SCPS%',[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($L -join "))),(New-Object System.Text.UTF8Encoding($true)))"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCPS%"
 del "%SCPS%" >nul 2>&1
 exit /b
@@ -1682,39 +1713,69 @@ if %errorlevel%==0 (
     pause
     goto adv
 )
-findstr /r /v /b /c:"CLEAN" "%TEMP%\sc_st.txt" > "%TEMP%\sc_st2.txt" 2>nul
-for /f "usebackq tokens=1,* delims=|" %%a in ("%TEMP%\sc_st2.txt") do (
-    echo    %%a   [%%b]
-    set "stq="
-    set /p stq="    %S_ST_Q% > "
-    if /i "!stq!"=="y" (
-        md "%QDIR%" 2>nul
-        move /y "%%a" "%QDIR%\" >nul 2>&1
-        if exist "%QDIR%\%%~nxa" (
-            echo    %S_ST_QD%
-            call :log "strange file quarantined: %%a"
-        ) else (
-            echo    %S_ST_FAIL%
-        )
-    ) else (
-        echo    %S_ST_KEEP%
-    )
+powershell -NoProfile -Command "$i=0;Get-Content '%TEMP%\sc_st.txt'|ForEach-Object{$i++;$p=($_ -split '\|')[0];$s=($_ -split '\|')[1];('{0}. {1}  [{2}]' -f $i,$p,$s)}"
+set "SEL="
+set /p SEL="   %S_ST_SEL% > "
+if "%SEL%"=="" (
+    echo    %S_ST_KEEP%
+    del "%TEMP%\sc_st.txt" >nul 2>&1
+    echo.
+    pause
+    goto adv
 )
-del "%TEMP%\sc_st.txt" "%TEMP%\sc_st2.txt" >nul 2>&1
+powershell -NoProfile -Command "$sel=','+$env:SEL+',';$i=0;$q=$env:QDIR;md $q -EA 0|Out-Null;Get-Content '%TEMP%\sc_st.txt'|ForEach-Object{$i++;$f=($_ -split '\|')[0];if($env:SEL -eq 'A' -or $sel.Contains(','+$i+',')){try{Move-Item -LiteralPath $f -Destination ($q+'\'+(Split-Path $f -Leaf)) -Force -EA Stop;('MOVED: '+$f)}catch{('FAIL: '+$f)}}}"
+del "%TEMP%\sc_st.txt" >nul 2>&1
 echo    %S_ST_QDIR% %QDIR%
 call :log "strange files scan done"
 echo.
 pause
 goto adv
+
 :loadcfg
 set "S_Scheme="
 if exist "%CFG%" (
-    for /f "usebackq tokens=1,* delims==" %%a in ("%CFG%") do set "S_%%a=%%b"
+    for /f "usebackq tokens=1,* delims==" %%a in ("%CFG%") do (
+        echo %%a|findstr /r /x "Scheme SysMainStart SysMainDelayed WSearchStart WSearchDelayed GlobalUserDisabled GameDVR_Enabled AppCaptureEnabled ThrottleMaxAC ThrottleMaxDC ThrottleMinAC ThrottleMinDC" >nul 2>&1
+        if not errorlevel 1 set "S_%%a=%%b"
+    )
+)
+for %%k in (SysMainStart SysMainDelayed WSearchStart WSearchDelayed ThrottleMaxAC ThrottleMaxDC ThrottleMinAC ThrottleMinDC) do (
+    if defined S_%%k (
+        echo !S_%%k!|findstr /r /x "[0-9][0-9]*" >nul 2>&1
+        if errorlevel 1 set "S_%%k="
+    )
+)
+for %%k in (GlobalUserDisabled GameDVR_Enabled AppCaptureEnabled) do (
+    if defined S_%%k (
+        if not "!S_%%k!"=="ABSENT" (
+            echo !S_%%k!|findstr /r /x "[0-9][0-9]*" >nul 2>&1
+            if errorlevel 1 set "S_%%k="
+        )
+    )
+)
+if defined S_Scheme (
+    echo !S_Scheme!|findstr /r /x "[0-9a-fA-F-][0-9a-fA-F-]*" >nul 2>&1
+    if errorlevel 1 set "S_Scheme="
 )
 set "CALMSCHEME=!S_Scheme!"
 if "!CALMSCHEME!"=="" set "CALMSCHEME=SCHEME_CURRENT"
 exit /b
 
+:restorepoint
+set "RP_ABORT=0"
+echo   %S_RP_MAKING%
+set "RP="
+for /f "delims=" %%r in ('powershell -NoProfile -Command "$k='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore';$old=(Get-ItemProperty $k -Name SystemRestorePointCreationFrequency -EA 0).SystemRestorePointCreationFrequency;Set-ItemProperty $k -Name SystemRestorePointCreationFrequency -Value 0 -Type DWord -EA 0;try{Enable-ComputerRestore -Drive ($env:SystemDrive+'\') -EA 0;$b=[int](Get-ComputerRestorePoint -EA 0|Sort-Object SequenceNumber|Select-Object -Last 1).SequenceNumber;Checkpoint-Computer -Description SourceClean -RestorePointType MODIFY_SETTINGS -EA Stop;$a=[int](Get-ComputerRestorePoint -EA 0|Sort-Object SequenceNumber|Select-Object -Last 1).SequenceNumber;if($a -gt $b){'RESTORE_POINT_OK'}else{'RESTORE_POINT_FAIL: no new restore point'}}catch{'RESTORE_POINT_FAIL: '+$_.Exception.Message}finally{if($null -eq $old){Remove-ItemProperty $k -Name SystemRestorePointCreationFrequency -EA 0}else{Set-ItemProperty $k -Name SystemRestorePointCreationFrequency -Value $old -Type DWord -EA 0}}"') do set "RP=%%r"
+if /i "!RP!"=="RESTORE_POINT_OK" (
+    echo   %S_RP_OK%
+) else (
+    echo   %S_RP_FAIL%: !RP!
+    set "rpw="
+    set /p rpw="   %S_RP_CONTQ% > "
+    if /i not "!rpw!"=="y" set "RP_ABORT=1"
+)
+echo.
+exit /b
 :checkcfg
 set "CFG_OK=1"
 for %%k in (Scheme SysMainStart SysMainDelayed WSearchStart WSearchDelayed GlobalUserDisabled GameDVR_Enabled AppCaptureEnabled ThrottleMaxAC ThrottleMaxDC ThrottleMinAC ThrottleMinDC) do (
