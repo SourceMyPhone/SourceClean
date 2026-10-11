@@ -1775,6 +1775,7 @@ echo   %S_ME_TITLE%
 echo.
 echo    %S_ME_USER% %USERNAME%
 for /f "delims=" %%f in ('powershell -NoProfile -Command "(Get-LocalUser -Name $env:USERNAME -EA 0).FullName"') do echo    %S_ME_FULL% %%f
+for /f "delims=" %%s in ('powershell -NoProfile -Command "(Get-LocalUser -Name $env:USERNAME -EA 0).PrincipalSource"') do echo    Account type: %%s
 echo    %S_ME_PC% %COMPUTERNAME%
 echo    %S_ME_MS%
 echo.
