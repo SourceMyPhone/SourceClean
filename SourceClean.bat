@@ -164,6 +164,21 @@ set "S_B10=Startup manager (read-only)"
 set "S_B11=Battery report"
 set "S_B12=Font cache cleanup"
 set "S_A_DONE=Done."
+set "S_ME=Profile"
+set "S_ME_TITLE=PROFILE"
+set "S_ME_USER=Current user:"
+set "S_ME_FULL=Display name (login screen):"
+set "S_ME_PC=Computer name:"
+set "S_ME_1=Change display name (nickname)"
+set "S_ME_2=Change login name (local account only)"
+set "S_ME_3=Change computer name (reboot needed)"
+set "S_ME_NEW=New name:"
+set "S_ME_DONE=Done - sign out to see it"
+set "S_ME_MS=If this is a Microsoft account, the name is managed at account.microsoft.com"
+set "S_ME_PCBAD=Invalid name (letters/digits/dots/dashes, max 48)"
+set "S_ME_PCBAD2=1-15 chars: latin letters, digits, hyphen"
+set "S_ME_NOTE2=Note: profile folder C:\Users\... is not renamed"
+set "S_ME_PCOK=Done - reboot to apply"
 set "S_INVBAD=Invalid process name (letters, dots, dashes only)"
 set "S_ST_SEL=Numbers to quarantine (like 1,3; A=all; Enter=skip)"
 set "S_B13=Strange files scan"
@@ -323,6 +338,21 @@ if /i "%L%"=="R" (
     set "S_MA=Визуальные эффекты - прозрачность, анимации"
     set "S_MB=Системные инструменты - 12 утилит"
     set "S_A_DONE=Готово."
+    set "S_ME=Профиль"
+    set "S_ME_TITLE=ПРОФИЛЬ"
+    set "S_ME_USER=Текущий пользователь:"
+    set "S_ME_FULL=Отображаемое имя (экран входа):"
+    set "S_ME_PC=Имя компьютера:"
+    set "S_ME_1=Сменить ник (отображаемое имя)"
+    set "S_ME_2=Сменить логин (только локальная учётка)"
+    set "S_ME_3=Сменить имя компьютера (нужна перезагрузка)"
+    set "S_ME_NEW=Новое имя:"
+    set "S_ME_DONE=Готово - выйдите из сеанса, чтобы увидеть"
+    set "S_ME_MS=Если учётка Microsoft - имя задаётся на account.microsoft.com"
+    set "S_ME_PCBAD=Некорректное имя (буквы/цифры/точки/дефисы, до 48)"
+    set "S_ME_PCBAD2=1-15 символов: латиница, цифры, дефис"
+    set "S_ME_NOTE2=Папка профиля C:\Users\... не переименовывается"
+    set "S_ME_PCOK=Готово - нужна перезагрузка"
     set "S_INVBAD=Некорректное имя процесса (только буквы, точки, дефисы)"
     set "S_ST_SEL=Номера в карантин (например 1,3; A=все; Enter=пропустить)"
     set "S_B13=Поиск странных файлов"
@@ -382,6 +412,7 @@ if /i "%ACT%"=="/miner" goto miner
 if /i "%ACT%"=="/adv" goto adv
 if /i "%ACT%"=="/linux" goto linux
 if /i "%ACT%"=="/net" goto net
+if /i "%ACT%"=="/profile" goto profile
 if /i "%ACT%"=="/strange" goto strange
 if /i "%ACT%"=="/visual" goto visual
 goto menu
@@ -425,6 +456,7 @@ echo    [A]  %S_MA%
 echo    [B]  %S_MB%
 echo    [C]  %S_MC%
 echo    [D]  %S_MD%
+echo    [E]  %S_ME%
 echo    [0]  %S_M0%
 echo.
 echo    %S_DON% UQAv-7oVunTisIQFtMY0z7qKRyZ_Gy0VZvT6VT1zOxNQQtl_
@@ -443,6 +475,7 @@ if /i "%choice%"=="A" goto visual
 if /i "%choice%"=="B" goto adv
 if /i "%choice%"=="C" goto linux
 if /i "%choice%"=="D" goto net
+if /i "%choice%"=="E" goto profile
 if "%choice%"=="0" exit /b
 goto menu
 
@@ -1734,6 +1767,87 @@ echo.
 pause
 goto adv
 
+:profile
+cls
+color 07
+echo.
+echo   %S_ME_TITLE%
+echo.
+echo    %S_ME_USER% %USERNAME%
+for /f "delims=" %%f in ('powershell -NoProfile -Command "(Get-LocalUser -Name $env:USERNAME -EA 0).FullName"') do echo    %S_ME_FULL% %%f
+echo    %S_ME_PC% %COMPUTERNAME%
+echo    %S_ME_MS%
+echo.
+echo    [1]  %S_ME_1%
+echo    [2]  %S_ME_2%
+echo    [3]  %S_ME_3%
+echo    [M]  %S_M0%
+echo.
+set "pch="
+set /p pch="   %S_CHOOSE% > "
+if "%pch%"=="1" goto prof_name
+if "%pch%"=="2" goto prof_login
+if "%pch%"=="3" goto prof_pc
+if /i "%pch%"=="m" goto menu
+goto profile
+
+:prof_name
+echo    %S_ME_NEW%
+set "NN="
+set /p NN="   > "
+set "NEWNAME=%NN%"
+for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:NEWNAME -match ''^[\p{L}\p{Nd} .\-]{1,48}$''){''OK''}else{''BAD''}"') do set "PV=%%v"
+if not "%PV%"=="OK" (
+    echo    %S_ME_PCBAD%
+    goto profile
+)
+net user "%USERNAME%" /fullname:"%NEWNAME%" >nul 2>&1
+call :log "profile: display name changed"
+echo    %S_ME_DONE%
+echo.
+pause
+goto profile
+
+:prof_login
+echo    %S_ME_NEW%
+set "NL="
+set /p NL="   > "
+set "NEWLOGIN=%NL%"
+for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:NEWLOGIN -match ''^[A-Za-z0-9._\-]{1,32}$''){''OK''}else{''BAD''}"') do set "PV=%%v"
+if not "%PV%"=="OK" (
+    echo    %S_ME_PCBAD%
+    goto profile
+)
+powershell -NoProfile -Command "try{Rename-LocalUser -Name $env:USERNAME -NewName $env:NEWLOGIN -EA Stop;('OK')}catch{('FAIL: '+$_.Exception.Message)}" > "%TEMP%\sc_pr.txt" 2>nul
+set /p PRES=<"%TEMP%\sc_pr.txt"
+del "%TEMP%\sc_pr.txt" >nul 2>&1
+call :log "profile: login renamed to %NEWLOGIN%"
+echo    %S_ME_NOTE2%
+echo    %PRES%
+echo.
+pause
+goto profile
+
+:prof_pc
+echo    %S_ME_NEW%
+set "NP="
+set /p NP="   > "
+set "NEWPC=%NP%"
+for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:NEWPC -match ''^[A-Za-z0-9-]{1,15}$''){''OK''}else{''BAD''}"') do set "PV=%%v"
+if not "%PV%"=="OK" (
+    echo    %S_ME_PCBAD2%
+    goto profile
+)
+powershell -NoProfile -Command "try{Rename-Computer -NewName $env:NEWPC -Force -EA Stop;('OK')}catch{('FAIL: '+$_.Exception.Message)}" > "%TEMP%\sc_pr.txt" 2>nul
+set /p PRES=<"%TEMP%\sc_pr.txt"
+del "%TEMP%\sc_pr.txt" >nul 2>&1
+call :log "profile: computer renamed to %NEWPC%"
+echo    %S_ME_PCOK%
+echo    %PRES%
+call :askreboot
+echo.
+pause
+goto profile
 :loadcfg
 set "S_Scheme="
 if exist "%CFG%" (
