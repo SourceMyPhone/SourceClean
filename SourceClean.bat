@@ -164,6 +164,7 @@ set "S_B10=Startup manager (read-only)"
 set "S_B11=Battery report"
 set "S_B12=Font cache cleanup"
 set "S_A_DONE=Done."
+set "S_VRD=Windows default visuals restored"
 set "S_ME=Profile"
 set "S_ME_TITLE=PROFILE"
 set "S_ME_USER=Current user:"
@@ -338,6 +339,7 @@ if /i "%L%"=="R" (
     set "S_MA=Визуальные эффекты - прозрачность, анимации"
     set "S_MB=Системные инструменты - 12 утилит"
     set "S_A_DONE=Готово."
+    set "S_VRD=Возвращены стандартные эффекты Windows"
     set "S_ME=Профиль"
     set "S_ME_TITLE=ПРОФИЛЬ"
     set "S_ME_USER=Текущий пользователь:"
@@ -1204,20 +1206,30 @@ powershell -NoProfile -Command "$a='HKCU:\Control Panel\Desktop\WindowMetrics';$
 exit /b
 
 :vis_restore
-if not exist "%VCFG%" (
-    echo    %S_VRN%
-    echo.
-    pause
-    goto visual
+if exist "%VCFG%" (
+    for /f "usebackq tokens=1,* delims==" %%a in ("%VCFG%") do call :vr_apply "%%a" "%%b"
+    del "%VCFG%" >nul 2>&1
+    echo    %S_VRS%
+) else (
+    call :vr_defaults
+    echo    %S_VRD%
 )
-for /f "usebackq tokens=1,* delims==" %%a in ("%VCFG%") do call :vr_apply "%%a" "%%b"
-del "%VCFG%" >nul 2>&1
-call :log "visual: restored saved state"
-echo    %S_VRS%
 call :askreboot
 echo.
 pause
 goto visual
+
+:vr_defaults
+reg add "HKCU\Control Panel\Desktop\WindowMetrics" /v MinAnimate /t REG_SZ /d 1 /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarAnimations /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ListviewAlphaSelect /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v IconsOnly /t REG_DWORD /d 0 /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\DWM" /v EnableAeroPeek /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 0 /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" /v ToastEnabled /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9E3E078012000000 /f >nul 2>&1
+exit /b
 
 :vr_apply
 set "VKEY=%~1"
