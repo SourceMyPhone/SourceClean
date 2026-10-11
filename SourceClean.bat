@@ -569,6 +569,7 @@ reg export "HKCU\Software\Microsoft\Windows\CurrentVersion\GameDVR" "%BAK%\gamed
 reg export "HKLM\SYSTEM\CurrentControlSet\Services\SysMain" "%BAK%\sysmain.reg" /y >nul 2>&1
 reg export "HKLM\SYSTEM\CurrentControlSet\Services\WSearch" "%BAK%\wsearch.reg" /y >nul 2>&1
 
+if not exist "%SCDIR%" md "%SCDIR%" >nul 2>&1
 for /f "delims=" %%t in ('powershell -NoProfile -Command "Get-ScheduledTask -EA SilentlyContinue | Where-Object { $_.TaskName -like 'NVIDIA App SelfUpdate*' -and $_.State -ne 'Disabled' } | ForEach-Object { $_.TaskPath + $_.TaskName }"') do echo %%t>>"%TASKS%"
 powershell -NoProfile -Command "$f='%TASKS%';if(Test-Path $f){$ok=Get-Content $f|Where-Object {$_ -match '^[A-Za-z0-9_{}\\ .-]+$'};Set-Content $f $ok -Encoding ASCII}"
 
@@ -1164,6 +1165,7 @@ goto menu
 
 
 :vis_save
+if not exist "%SCDIR%" md "%SCDIR%" >nul 2>&1
 if exist "%VCFG%" exit /b
 powershell -NoProfile -Command "$a='HKCU:\Control Panel\Desktop\WindowMetrics';$b='HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced';$c='HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize';$d='HKCU:\Software\Microsoft\Windows\DWM';$e='HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects';$f='HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications';function G($k,$n){$v=(Get-ItemProperty $k -Name $n -EA 0).$n;if($null -eq $v){'ABSENT'}else{$v}};'MinAnimate='+$(G $a 'MinAnimate');'TaskbarAnimations='+$(G $b 'TaskbarAnimations');'EnableTransparency='+$(G $c 'EnableTransparency');'EnableAeroPeek='+$(G $d 'EnableAeroPeek');'ListviewAlphaSelect='+$(G $b 'ListviewAlphaSelect');'IconsOnly='+$(G $b 'IconsOnly');'VisualFXSetting='+$(G $e 'VisualFXSetting');'ToastEnabled='+$(G $f 'ToastEnabled')" > "%VCFG%" 2>nul
 exit /b
@@ -1213,6 +1215,7 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" /v %V
 exit /b
 
 :svcsave
+if not exist "%SCDIR%" md "%SCDIR%" >nul 2>&1
 if exist "%CFG%" exit /b
 if exist "%FLAG%" exit /b
 powershell -NoProfile -Command "$c='HKLM:\SYSTEM\CurrentControlSet\Services';$s1=[int](Get-ItemProperty ($c+'\SysMain') -Name Start -EA 0).Start;$d1=[int](Get-ItemProperty ($c+'\SysMain') -Name DelayedAutostart -EA 0).DelayedAutostart;$s2=[int](Get-ItemProperty ($c+'\WSearch') -Name Start -EA 0).Start;$d2=[int](Get-ItemProperty ($c+'\WSearch') -Name DelayedAutostart -EA 0).DelayedAutostart;$g=[int](Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications' -Name GlobalUserDisabled -EA 0).GlobalUserDisabled;$v=[int](Get-ItemProperty 'HKCU:\System\GameConfigStore' -Name GameDVR_Enabled -EA 0).GameDVR_Enabled;$r=[int](Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR' -Name AppCaptureEnabled -EA 0).AppCaptureEnabled;$sc=([regex]::Matches((powercfg /getactivescheme|Out-String),'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')[0].Value);$mx=[regex]::Matches((powercfg /q SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX|Out-String),'0x[0-9a-fA-F]{8}');$mn=[regex]::Matches((powercfg /q SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN|Out-String),'0x[0-9a-fA-F]{8}');('Scheme={0}' -f $sc);('SysMainStart={0}' -f $s1);('SysMainDelayed={0}' -f $d1);('WSearchStart={0}' -f $s2);('WSearchDelayed={0}' -f $d2);('GlobalUserDisabled={0}' -f $g);('GameDVR_Enabled={0}' -f $v);('AppCaptureEnabled={0}' -f $r);('ThrottleMaxAC={0}' -f [convert]::ToInt32($mx[$mx.Count-2].Value,16));('ThrottleMaxDC={0}' -f [convert]::ToInt32($mx[$mx.Count-1].Value,16));('ThrottleMinAC={0}' -f [convert]::ToInt32($mn[$mn.Count-2].Value,16));('ThrottleMinDC={0}' -f [convert]::ToInt32($mn[$mn.Count-1].Value,16))" > "%CFG%" 2>nul
