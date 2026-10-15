@@ -389,6 +389,22 @@ if /i "%L%"=="R" (
     set "S_V_T=Прозрачность"
     set "S_B10T=╪ ¤ з ў-? Microsoft"
     set "S_B10H="Їа ў<?-Ё?: "ЁбЇ?вз?а  ¤ з"
+    set "S_B_TITLE=СИСТЕМНЫЕ ИНСТРУМЕНТЫ"
+    set "S_B1=Удалить OneDrive"
+    set "S_B2=Удалить bloatware (Appx)"
+    set "S_B3=Отключить гибернацию"
+    set "S_B4=Проверка SFC + DISM"
+    set "S_B4N=Это займёт 10-30 минут"
+    set "S_B5=Полная очистка кэша Windows Update"
+    set "S_B6=Отключить Delivery Optimization"
+    set "S_B7=Питание: USB suspend + PCIe выкл"
+    set "S_B8=Сброс Winsock / TCP"
+    set "S_B9=Отключить подсказки и рекламу"
+    set "S_B10=Менеджер автозагрузки (просмотр)"
+    set "S_B11=Отчёт о батарее"
+    set "S_B11N=Батарея не найдена (стационарный ПК?)"
+    set "S_B12=Очистка шрифтового кэша"
+    set "S_B13=Поиск странных файлов"
     set "S_A_TITLE=ВИЗУАЛЬНЫЕ ЭФФЕКТЫ"
     set "S_A1=Прозрачность эффектов"
     set "S_A2=Прозрачность панели задач"
@@ -885,13 +901,13 @@ set /p killname="   %S_KILL% > "
 if "%killname%"=="0" goto menu
 if "%killname%"=="" goto info_kill
 set "KN=%killname%"
-for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:KN -match ''^[A-Za-z0-9._-]+$''){''OK''}else{''BAD''}"') do set "KVAL=%%v"
+for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:KN -match '^[A-Za-z0-9._-]+$'){'OK'}else{'BAD'}"') do set "KVAL=%%v"
 if not "%KVAL%"=="OK" (
     echo    %S_INVBAD%
     call :log "kill refused: invalid name"
     goto info_kill
 )
-for /f "delims=" %%v in ('powershell -NoProfile -Command "$n=$env:KN -replace ''\.exe$'','''';$sys=@(''system'',''registry'',''smss'',''csrss'',''wininit'',''winlogon'',''services'',''lsass'',''svchost'',''msmpeng'',''nissrv'',''memory compression'',''memcompression'',''dwm'',''explorer'',''runtimebroker'',''fontdrvhost'',''audiodg'',''spoolsv'',''conhost'',''dllhost'',''taskhostw'',''sihost'',''textinputhost'',''startmenuexperiencehost'',''searchhost'',''shellexperiencehost'',''securityhealthservice'',''nvcontainer'',''applicationframehost'',''wudfhost'',''wmiprvse'',''searchindexer'',''smartscreen'');$ok=$true;if($sys -contains $n){$ok=$false}else{$gp=Get-Process -Name $n -EA 0|Select-Object -First 1;if($gp.Path -and $gp.Path.StartsWith(''C:\Windows\'')){$ok=$false}};if($ok){''KILL_OK''}else{''PROTECTED''}"') do set "KCHK=%%v"
+for /f "delims=" %%v in ('powershell -NoProfile -Command "$n=$env:KN -replace '\.exe$','';$sys=@('system','registry','smss','csrss','wininit','winlogon','services','lsass','svchost','msmpeng','nissrv','memory compression','memcompression','dwm','explorer','runtimebroker','fontdrvhost','audiodg','spoolsv','conhost','dllhost','taskhostw','sihost','textinputhost','startmenuexperiencehost','searchhost','shellexperiencehost','securityhealthservice','nvcontainer','applicationframehost','wudfhost','wmiprvse','searchindexer','smartscreen');$ok=$true;if($sys -contains $n){$ok=$false}else{$gp=Get-Process -Name $n -EA 0|Select-Object -First 1;if($gp.Path -and $gp.Path.StartsWith('C:\Windows\')){$ok=$false}};if($ok){'KILL_OK'}else{'PROTECTED'}"') do set "KCHK=%%v"
 if "%KCHK%"=="PROTECTED" (
     echo    %S_PROT%
     call :log "kill refused: %killname% is a system process"
@@ -1235,7 +1251,7 @@ exit /b
 set "VKEY=%~1"
 set "VVAL=%~2"
 if "%VKEY%"=="" exit /b
-echo %VKEY%|findstr /r /x "MinAnimate TaskbarAnimations EnableTransparency EnableAeroPeek ListviewAlphaSelect IconsOnly VisualFXSetting ToastEnabled" >nul 2>&1
+echo !VKEY!|findstr /r /x "MinAnimate TaskbarAnimations EnableTransparency EnableAeroPeek ListviewAlphaSelect IconsOnly VisualFXSetting ToastEnabled" >nul 2>&1
 if errorlevel 1 exit /b
 if "%VVAL%"=="ABSENT" (
     reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v %VKEY% /f >nul 2>&1
@@ -1246,7 +1262,7 @@ if "%VVAL%"=="ABSENT" (
     reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" /v %VKEY% /f >nul 2>&1
     exit /b
 )
-echo %VVAL%|findstr /r /x "[0-9][0-9]*" >nul 2>&1
+echo !VVAL!|findstr /r /x "[0-9][0-9]*" >nul 2>&1
 if errorlevel 1 exit /b
 if "%VKEY%"=="MinAnimate" (
     reg add "HKCU\Control Panel\Desktop\WindowMetrics" /v MinAnimate /t REG_SZ /d %VVAL% /f >nul
@@ -1542,7 +1558,7 @@ set "SCLANG=%L%"
 if not exist "%SCDIR%" md "%SCDIR%" >nul 2>&1
 icacls "%SCDIR%" /inheritance:r /grant "*S-1-5-32-544:F" /grant "*S-1-5-18:F" >nul 2>&1
 set "SCPS=%SCDIR%\SourceClean_%1_%RANDOM%.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$L=[IO.File]::ReadAllLines('%~f0',[Text.Encoding]::GetEncoding(866))|Where-Object{$_.StartsWith('::%1 ')}|ForEach-Object{$_.Substring(6)};[IO.File]::WriteAllText('%SCPS%',[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($L -join "))),(New-Object System.Text.UTF8Encoding($true)))"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$L=[IO.File]::ReadAllLines('%~f0',[Text.Encoding]::GetEncoding(866))|Where-Object{$_.StartsWith('::%1 ')}|ForEach-Object{$_.Substring(6)};[IO.File]::WriteAllText('%SCPS%',[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($L -join ''))),(New-Object System.Text.UTF8Encoding($true)))"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCPS%"
 del "%SCPS%" >nul 2>&1
 exit /b
@@ -1809,7 +1825,7 @@ echo    %S_ME_NEW%
 set "NN="
 set /p NN="   > "
 set "NEWNAME=%NN%"
-for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:NEWNAME -match ''^[\p{L}\p{Nd} .\-]{1,48}$''){''OK''}else{''BAD''}"') do set "PV=%%v"
+for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:NEWNAME -match '^[\p{L}\p{Nd} .\-]{1,48}$'){'OK'}else{'BAD'}"') do set "PV=%%v"
 if not "%PV%"=="OK" (
     echo    %S_ME_PCBAD%
     goto profile
@@ -1826,7 +1842,7 @@ echo    %S_ME_NEW%
 set "NL="
 set /p NL="   > "
 set "NEWLOGIN=%NL%"
-for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:NEWLOGIN -match ''^[A-Za-z0-9._\-]{1,32}$''){''OK''}else{''BAD''}"') do set "PV=%%v"
+for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:NEWLOGIN -match '^[A-Za-z0-9._\-]{1,32}$'){'OK'}else{'BAD'}"') do set "PV=%%v"
 if not "%PV%"=="OK" (
     echo    %S_ME_PCBAD%
     goto profile
@@ -1846,7 +1862,7 @@ echo    %S_ME_NEW%
 set "NP="
 set /p NP="   > "
 set "NEWPC=%NP%"
-for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:NEWPC -match ''^[A-Za-z0-9-]{1,15}$''){''OK''}else{''BAD''}"') do set "PV=%%v"
+for /f "delims=" %%v in ('powershell -NoProfile -Command "if($env:NEWPC -match '^[A-Za-z0-9-]{1,15}$'){'OK'}else{'BAD'}"') do set "PV=%%v"
 if not "%PV%"=="OK" (
     echo    %S_ME_PCBAD2%
     goto profile
@@ -1865,7 +1881,8 @@ goto profile
 set "S_Scheme="
 if exist "%CFG%" (
     for /f "usebackq tokens=1,* delims==" %%a in ("%CFG%") do (
-        echo %%a|findstr /r /x "Scheme SysMainStart SysMainDelayed WSearchStart WSearchDelayed GlobalUserDisabled GameDVR_Enabled AppCaptureEnabled ThrottleMaxAC ThrottleMaxDC ThrottleMinAC ThrottleMinDC" >nul 2>&1
+        set "CK=%%a"
+        echo !CK!|findstr /r /x "Scheme SysMainStart SysMainDelayed WSearchStart WSearchDelayed GlobalUserDisabled GameDVR_Enabled AppCaptureEnabled ThrottleMaxAC ThrottleMaxDC ThrottleMinAC ThrottleMinDC" >nul 2>&1
         if not errorlevel 1 set "S_%%a=%%b"
     )
 )
